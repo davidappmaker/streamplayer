@@ -154,6 +154,23 @@ function lanIPs() {
   return out;
 }
 
+// 端口被占用时给出清晰提示，而不是抛一堆堆栈后闪退
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error('');
+    console.error('  [启动失败] 端口 ' + PORT + ' 已被占用。');
+    console.error('  多半是之前开过的代理窗口还在后台运行，或另一个程序占用了这个端口。');
+    console.error('  解决办法：关掉所有已开的代理黑窗口；若仍不行，在命令行执行');
+    console.error('  netstat -ano | findstr :' + PORT + '  找到 PID 后用 taskkill /PID <PID> /F 结束它。');
+    console.error('');
+  } else if (err && err.code === 'EACCES') {
+    console.error('  [启动失败] 没有权限监听端口 ' + PORT + '，请用管理员身份运行。');
+  } else {
+    console.error('  [启动失败] ' + (err && err.message ? err.message : err));
+  }
+  process.exit(1);
+});
+
 // 监听 0.0.0.0：既服务本机，也服务同一 WiFi 下的手机。
 // 代理只做转发，不存储内容；仅在本地网络内可达。
 server.listen(PORT, '0.0.0.0', () => {
