@@ -2,6 +2,12 @@
 
 一个纯前端的直播源播放器，类似「友窝」的使用方式：自己填入直播源地址即可播放。支持 iPhone 添加到主屏幕当 App 用，也支持一键部署到 GitHub Pages。
 
+## 在线地址
+
+**https://davidappmaker.github.io/streamplayer/**
+
+页面已部署到 GitHub Pages，直接用 Safari 打开即可；iPhone 用 Safari 打开后点分享 →「添加到主屏幕」就能当 App 用。
+
 ## 功能
 
 - 播放 M3U8 / HLS 直播流（iPhone Safari 用原生 HLS，其他浏览器自动加载 hls.js）以及 MP4 等浏览器支持的格式
