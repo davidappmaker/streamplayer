@@ -207,6 +207,9 @@ button { cursor: pointer; border: 0; background: none; padding: 0; }
 .card-body { min-width: 0; flex: 1; }
 .card-body strong { display: block; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-body small { display: block; font-size: 10px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+.codec-tag { display: inline-block; font-size: 9px; font-weight: 700; line-height: 1; padding: 2px 5px; border-radius: 4px; vertical-align: 1px; margin-left: 4px; }
+.codec-tag.h264 { color: #34d399; background: rgba(52,211,153,.14); }
+.codec-tag.h265 { color: #ff8f9c; background: rgba(255,77,94,.16); }
 .card-del {
   position: absolute; top: 4px; right: 4px;
   width: 22px; height: 22px; border-radius: 6px;
