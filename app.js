@@ -54,6 +54,25 @@
     return needProxy(ch) ? proxyPrefix + encodeURIComponent(ch.url) : ch.url;
   }
 
+  // 是否 iOS 设备。注意：iPhone「添加到主屏幕」后的 PWA 独立模式，
+  // User-Agent 里的 "Safari" 和 "Version" 字样会被去掉，不能只靠 /Safari/ 判断。
+  function isIOSDevice() {
+    const ua = navigator.userAgent || '';
+    if (/iPad|iPhone|iPod/i.test(ua)) return true;
+    // iPadOS 13+ 伪装成 Mac，但触摸屏有多点触控
+    if (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1) return true;
+    return false;
+  }
+
+  // 是否应优先用原生 HLS：iOS 全系 + 桌面 Safari。
+  // iOS 的 MediaSource 不支持 HEVC 视频（只能解音频），H265 源走 hls.js 会「有声音没图像」，
+  // 必须走原生 HLS 让系统硬解。其它浏览器（Chrome/Edge）优先 hls.js。
+  function preferNativeHls() {
+    if (isIOSDevice()) return true;
+    const ua = navigator.userAgent || '';
+    return /Safari/i.test(ua) && !/Chrome|Chromium|Edg|OPR|Firefox/i.test(ua);
+  }
+
   // 浏览器 HEVC 解码能力检测（H265 在 Chrome/Edge 上普遍不支持，Safari 较新版本支持）
   function hevcSupport() {
     const v = document.createElement('video');
@@ -205,8 +224,6 @@
     out.innerHTML = '正在检测 <b>' + esc(ch.name) + '</b> …';
     openSheet('sheetDiag');
 
-    const ua = navigator.userAgent || '';
-    const isSafari = /Safari/i.test(ua) && !/Chrome|Chromium|Edg|OPR|Firefox/i.test(ua);
     const usingProxy = needProxy(ch);
     // 用代理时先探测代理服务本身——区分「代理没开」和「源不可用」
     const proxyOk = usingProxy ? await proxyAlive() : null;
@@ -216,7 +233,7 @@
     else proxyLine = '代理服务：<span class="diag-bad">✗ 没运行 — 请双击「启动本地代理.bat」并保持窗口开着</span>';
     const lines = [
       '页面协议：' + location.protocol,
-      '浏览器模式：' + (isSafari ? '原生 HLS（Safari）' : 'hls.js'),
+      '浏览器模式：' + (preferNativeHls() ? '原生 HLS（系统硬解，支持 H264/H265）' : 'hls.js'),
       '浏览器 HEVC(H265) 支持：' + (hevcSupport() ? '支持' : '不支持'),
       '该源编码：' + (ch.codec === 'H265' ? '<b>H265 / HEVC</b>' : ch.codec === 'H264' ? 'H264 / AVC' : '未探测（播放后显示）'),
       proxyLine,
@@ -268,13 +285,14 @@
     video.load();
 
     const url = requestUrl(channel);
-    const ua = navigator.userAgent || '';
-    const isSafari = /Safari/i.test(ua) && !/Chrome|Chromium|Edg|OPR|Firefox/i.test(ua);
     const nativeHls = video.canPlayType('application/vnd.apple.mpegurl') !== '';
     const canUseHls = typeof window.Hls !== 'undefined' && window.Hls.isSupported();
-    // Safari（含 iPhone / iPad / Mac）用原生 HLS 更稳更省电；
-    // 其它浏览器优先 hls.js —— 部分桌面浏览器 canPlayType 返回 maybe，原生 HLS 实际却播不了。
-    const useHlsJs = isHls(url) && canUseHls && (!isSafari || !nativeHls);
+    // iOS（含主屏幕 PWA）与桌面 Safari 用原生 HLS：系统硬解 H264/H265，最稳最省电。
+    // 关键：iOS 主屏幕 PWA 的 UA 不含 "Safari"，必须靠 isIOSDevice() 识别，
+    // 否则误走 hls.js 会因 iOS MediaSource 不支持 HEVC 而「有声音没图像」。
+    // 其它浏览器优先 hls.js —— 部分桌面 Chrome canPlayType 返回 maybe 但原生 HLS 实际播不了。
+    const nativePreferred = preferNativeHls();
+    const useHlsJs = isHls(url) && canUseHls && (!nativePreferred || !nativeHls);
 
     if (useHlsJs) {
       let codecChecked = false;
