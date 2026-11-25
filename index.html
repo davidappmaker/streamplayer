@@ -89,13 +89,23 @@
             <h2>频道列表</h2>
             <span class="sub-count" id="channelCount">0 个频道</span>
           </div>
-          <div class="search-box">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-            <input type="search" id="searchInput" placeholder="搜索频道" autocomplete="off">
-            <button class="search-clear" id="btnClearSearch2" hidden aria-label="清除搜索">✕</button>
+          <div class="head-tools">
+            <button class="manage-btn" id="btnBatch" title="批量管理频道">管理</button>
+            <div class="search-box">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <input type="search" id="searchInput" placeholder="搜索频道" autocomplete="off">
+              <button class="search-clear" id="btnClearSearch2" hidden aria-label="清除搜索">✕</button>
+            </div>
           </div>
         </div>
         <div class="tabs" id="tabs"></div>
+        <div class="batch-bar" id="batchBar" hidden>
+          <button class="batch-btn" id="btnSelectAll">全选</button>
+          <span class="batch-count" id="batchCount">已选 0 个</span>
+          <span class="batch-spacer"></span>
+          <button class="batch-btn ghost" id="btnBatchCancel">取消</button>
+          <button class="batch-btn danger" id="btnBatchDelete">删除</button>
+        </div>
         <div class="channel-list" id="channelList"></div>
         <div class="empty-state" id="emptyState" hidden>
           <p>没有找到匹配的频道</p>
@@ -150,6 +160,7 @@
       <button class="action-item" id="btnExport"><span>导出 M3U 列表</span><b>↗</b></button>
       <button class="action-item" id="btnInstall2"><span>添加到主屏幕</span><b>↗</b></button>
       <button class="action-item danger" id="btnReset"><span>恢复默认频道</span><b>↺</b></button>
+      <p class="hint">批量删除：点频道列表右上角「管理」，勾选后删除。按分组删：长按分组标签（电脑右键）即可一键删除该分组下所有频道。内置测试源不可删除。</p>
       <p class="hint">你的频道仅保存在此设备的浏览器中，清除浏览器数据会一并删除，建议定期导出备份。</p>
     </div>
   </div>
