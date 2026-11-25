@@ -165,6 +165,43 @@ button { cursor: pointer; border: 0; background: none; padding: 0; }
 .search-box input::placeholder { color: var(--text-faint); }
 .search-box input::-webkit-search-cancel-button { -webkit-appearance: none; }
 .search-clear { width: 18px; height: 18px; flex: 0 0 18px; border-radius: 50%; background: var(--surface-2); color: var(--text-dim); font-size: 10px; line-height: 18px; text-align: center; }
+.head-tools { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.manage-btn {
+  padding: 8px 12px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--line);
+  color: var(--text-dim); font-size: 12px; font-weight: 600;
+  white-space: nowrap; transition: .18s;
+}
+.manage-btn:hover { border-color: #46536a; color: var(--text); }
+.manage-btn.active { color: #ff8792; background: var(--accent-soft); border-color: rgba(255,77,94,.45); }
+
+.batch-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 12px; padding: 9px 11px;
+  border-radius: 11px; background: var(--surface);
+  border: 1px solid rgba(255,77,94,.3);
+}
+.batch-btn {
+  padding: 7px 12px; border-radius: 8px;
+  background: var(--surface-2); color: var(--text);
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.batch-btn:active { opacity: .8; }
+.batch-btn.ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--line); }
+.batch-btn.danger { background: var(--accent); color: #fff; }
+.batch-count { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.batch-spacer { flex: 1; }
+.channel-card.batch.selected { border-color: var(--accent); background: var(--accent-soft); }
+.channel-card.batch.locked { opacity: .5; }
+.batch-check {
+  width: 24px; height: 24px; flex: 0 0 24px;
+  display: grid; place-items: center;
+  border-radius: 7px; border: 1.5px solid var(--line);
+  background: var(--surface-2);
+  font-size: 13px; font-weight: 700; color: transparent;
+}
+.channel-card.batch.selected .batch-check { background: var(--accent); border-color: var(--accent); color: #fff; }
+.channel-card.batch.locked .batch-check { color: var(--text-faint); font-size: 15px; }
 
 .tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 12px; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
