@@ -751,17 +751,44 @@
     const ch = channels.find((c) => c.id === currentId);
     $('fsTitle').textContent = ch ? ch.name : '直播源播放器';
   }
+  // 分组展开状态：按组名记住，当前频道所在组默认展开，搜索时全部展开
+  const fsGroupOpen = {};
   function renderFsList() {
     const q = ($('fsSearchInput').value || '').trim().toLowerCase();
     const list = channels.filter((c) =>
       !q || c.name.toLowerCase().includes(q) || c.url.toLowerCase().includes(q)
     );
-    $('fsListItems').innerHTML = list.map((c, i) =>
-      `<button class="fs-item${c.id === currentId ? ' active' : ''}" data-id="${esc(c.id)}">
-        <span class="fs-item-index">${String(i + 1).padStart(2, '0')}</span>
-        <span class="fs-item-body"><strong>${esc(c.name)}</strong><small>${esc(c.group || '未分组')}</small></span>
-      </button>`
-    ).join('');
+    const groups = [];
+    const byGroup = {};
+    list.forEach((c) => {
+      const g = c.group || '未分组';
+      if (!byGroup[g]) { byGroup[g] = []; groups.push(g); }
+      byGroup[g].push(c);
+    });
+    const cur = channels.find((c) => c.id === currentId);
+    const curGroup = cur ? (cur.group || '未分组') : '';
+    groups.forEach((g) => {
+      if (fsGroupOpen[g] === undefined) fsGroupOpen[g] = (g === curGroup) || groups.length === 1;
+    });
+
+    $('fsListItems').innerHTML = groups.map((g) => {
+      const open = !!q || fsGroupOpen[g];
+      const items = byGroup[g].map((c) => {
+        const index = channels.indexOf(c) + 1;
+        return `<button class="fs-item${c.id === currentId ? ' active' : ''}" data-id="${esc(c.id)}">
+          <span class="fs-item-index">${String(index).padStart(2, '0')}</span>
+          <span class="fs-item-body"><strong>${esc(c.name)}</strong><small>${esc(c.group || '未分组')}</small></span>
+        </button>`;
+      }).join('');
+      return `<div class="fs-group">
+        <button class="fs-group-head" data-group="${esc(g)}" aria-expanded="${open}">
+          <span class="fs-group-arrow${open ? ' open' : ''}">▸</span>
+          <span class="fs-group-name">${esc(g)}</span>
+          <span class="fs-group-count">${byGroup[g].length}</span>
+        </button>
+        <div class="fs-group-items"${open ? '' : ' hidden'}>${items}</div>
+      </div>`;
+    }).join('');
   }
   function enterFs() {
     fsActive = true;
@@ -785,6 +812,13 @@
   $('btnFsListClose').addEventListener('click', () => { $('fsList').hidden = true; });
   $('fsSearchInput').addEventListener('input', renderFsList);
   $('fsListItems').addEventListener('click', (e) => {
+    const head = e.target.closest('.fs-group-head');
+    if (head) {
+      const g = head.dataset.group;
+      fsGroupOpen[g] = !fsGroupOpen[g];
+      renderFsList();
+      return;
+    }
     const item = e.target.closest('.fs-item');
     if (!item) return;
     const ch = channels.find((c) => c.id === item.dataset.id);
