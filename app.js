@@ -141,7 +141,8 @@
     if (!Array.isArray(saved)) saved = [];
     saved = saved.filter((c) => c && c.url && c.name).map((c) => ({
       id: c.id || uid(), name: c.name, url: c.url, group: c.group || '自定义',
-      custom: true, proxy: c.proxy === true ? true : (c.proxy === false ? false : null)
+      custom: true, proxy: c.proxy === true ? true : (c.proxy === false ? false : null),
+      codec: c.codec === 'H264' || c.codec === 'H265' ? c.codec : null
     }));
     channels = DEFAULT_CHANNELS.concat(saved);
   }
@@ -167,7 +168,7 @@
       const index = channels.indexOf(c) + 1;
       return `<button class="channel-card${c.id === currentId ? ' active' : ''}${c.custom ? ' custom' : ''}" data-id="${esc(c.id)}" title="${esc(c.url)}">
         <span class="card-index">${String(index).padStart(2, '0')}</span>
-        <span class="card-body"><strong>${esc(c.name)}</strong><small>${esc(c.group || '未分组')}</small></span>
+        <span class="card-body"><strong>${esc(c.name)}${c.codec === 'H265' ? ' <span class="codec-tag h265">H265</span>' : c.codec === 'H264' ? ' <span class="codec-tag h264">H264</span>' : ''}</strong><small>${esc(c.group || '未分组')}</small></span>
         ${c.custom ? `<span class="card-del" data-del="${esc(c.id)}" title="删除">✕</span>` : ''}
       </button>`;
     }).join('');
@@ -233,9 +234,10 @@
     else proxyLine = '代理服务：<span class="diag-bad">✗ 没运行 — 请双击「启动本地代理.bat」并保持窗口开着</span>';
     const lines = [
       '页面协议：' + location.protocol,
-      '浏览器模式：' + (preferNativeHls() ? '原生 HLS（系统硬解，支持 H264/H265）' : 'hls.js'),
-      '浏览器 HEVC(H265) 支持：' + (hevcSupport() ? '支持' : '不支持'),
-      '该源编码：' + (ch.codec === 'H265' ? '<b>H265 / HEVC</b>' : ch.codec === 'H264' ? 'H264 / AVC' : '未探测（播放后显示）'),
+      '浏览器模式：' + (preferNativeHls() ? '原生 HLS（系统解码）' : 'hls.js'),
+      '浏览器 HEVC 解码：' + (hevcSupport() ? '声明支持' : '不支持'),
+      '该源编码：' + (ch.codec === 'H265' ? '<b>H265 / HEVC（TS 封装）</b>' : ch.codec === 'H264' ? 'H264 / AVC' : '未探测（播放后显示）'),
+      ...(ch.codec === 'H265' ? ['<span class="diag-bad">此源是 HEVC + TS 封装，iOS Safari 不支持（要求 fMP4 封装），会「有声音没图像」；Chrome/Edge 也不解码 HEVC。需服务端转码或换 H264 源。</span>'] : []),
       proxyLine,
       '代理地址：' + (usingProxy ? proxyPrefix : '未配置'),
       '实际请求：' + (usingProxy ? '[代理] ' : '') + url
@@ -519,6 +521,11 @@
     closeSheets();
     play(ch);
     toast('频道已添加');
+    // 主动探测编码并标注到卡片，便于区分 iPhone 能否播放
+    probeCodec(ch).then(() => {
+      const cc = channels.find((c) => c.id === ch.id);
+      if (cc && cc.codec) save(), render();
+    });
   });
 
   $('btnPickFile').addEventListener('click', () => $('fileInput').click());
