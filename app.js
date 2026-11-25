@@ -163,13 +163,39 @@
 
   function clearLoadTimer() { clearTimeout(loadTimer); loadTimer = null; }
 
-  function streamHint(ch) {
-    if (needProxy(ch)) return '播放失败：代理请求失败，请检查代理地址';
+  // 探测代理服务是否在运行：请求代理根路径，本地代理无 url 参数会回 400，
+  // 但只要能拿到 HTTP 响应就说明服务在跑；连不上则 fetch 抛错。
+  async function proxyAlive() {
+    if (!proxyPrefix) return null;
+    const base = proxyPrefix.split('?')[0];
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    try {
+      await fetch(base, { signal: controller.signal, cache: 'no-store' });
+      return true;
+    } catch (e) {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function streamHint(ch) {
+    if (!ch) return '播放失败：源不可用';
+    if (needProxy(ch)) {
+      const alive = await proxyAlive();
+      if (alive === false) {
+        return '代理服务没在运行：请双击「启动本地代理.bat」，保持黑色窗口开着，再重新点频道';
+      }
+      return '代理已连接，但该源取不到数据：可能是源已失效，点「更多 → 网络诊断」看详情';
+    }
     if (/^http:/i.test(ch.url) && location.protocol === 'https:') {
       return '播放失败：HTTP 源被 HTTPS 拦截，请到「更多 → 代理设置」配置代理';
     }
     return '播放失败：源连不上（超时 / 已失效 / 跨域），可用「更多 → 网络诊断」检测';
   }
+
+  function showStreamHint(ch) { streamHint(ch).then((msg) => toast(msg)); }
 
   // 网络诊断：直接请求源，区分「源连不上」和「播放器问题」
   async function diagnose(ch) {
@@ -181,13 +207,21 @@
 
     const ua = navigator.userAgent || '';
     const isSafari = /Safari/i.test(ua) && !/Chrome|Chromium|Edg|OPR|Firefox/i.test(ua);
+    const usingProxy = needProxy(ch);
+    // 用代理时先探测代理服务本身——区分「代理没开」和「源不可用」
+    const proxyOk = usingProxy ? await proxyAlive() : null;
+    let proxyLine;
+    if (!usingProxy) proxyLine = '代理：未启用';
+    else if (proxyOk === true) proxyLine = '代理服务：<span class="diag-ok">✓ 运行中</span>';
+    else proxyLine = '代理服务：<span class="diag-bad">✗ 没运行 — 请双击「启动本地代理.bat」并保持窗口开着</span>';
     const lines = [
       '页面协议：' + location.protocol,
       '浏览器模式：' + (isSafari ? '原生 HLS（Safari）' : 'hls.js'),
       '浏览器 HEVC(H265) 支持：' + (hevcSupport() ? '支持' : '不支持'),
       '该源编码：' + (ch.codec === 'H265' ? '<b>H265 / HEVC</b>' : ch.codec === 'H264' ? 'H264 / AVC' : '未探测（播放后显示）'),
-      '代理：' + (needProxy(ch) ? proxyPrefix : '未启用'),
-      '实际请求：' + (needProxy(ch) ? '[代理] ' : '') + url
+      proxyLine,
+      '代理地址：' + (usingProxy ? proxyPrefix : '未配置'),
+      '实际请求：' + (usingProxy ? '[代理] ' : '') + url
     ];
 
     const controller = new AbortController();
@@ -203,7 +237,11 @@
       lines.push('内容预览：' + text.substring(0, 80).replace(/\n/g, ' '));
       lines.push(res.ok && /#EXTM3U/i.test(text) ? '<span class="diag-ok">✓ 源可达且是有效 M3U8</span>' : '<span class="diag-bad">✗ 源返回内容异常</span>');
     } catch (e) {
-      lines.push('<span class="diag-bad">✗ 请求失败：' + esc(e.name === 'AbortError' ? '超时（10 秒内无响应，源不可达或被网络拦截）' : e.message) + '</span>');
+      if (usingProxy && proxyOk === false) {
+        lines.push('<span class="diag-bad">✗ 请求失败 — 根因：本地代理服务没在运行（上面的「代理服务」一项）。请双击「启动本地代理.bat」，保持窗口开着，再重试。</span>');
+      } else {
+        lines.push('<span class="diag-bad">✗ 请求失败：' + esc(e.name === 'AbortError' ? '超时（10 秒内无响应，源不可达或被网络拦截）' : e.message) + '</span>');
+      }
     } finally {
       clearTimeout(timer);
     }
@@ -289,7 +327,7 @@
           return;
         }
         setLoading(false);
-        toast(streamHint(channel));
+        showStreamHint(channel);
         if (hls) { hls.destroy(); hls = null; }
       });
       hls.attachMedia(video);
@@ -306,7 +344,7 @@
     loadTimer = setTimeout(() => {
       if (video.paused) {
         setLoading(false);
-        toast(streamHint(channel));
+        showStreamHint(channel);
       }
     }, 15000);
   }
@@ -338,7 +376,7 @@
   video.addEventListener('error', () => {
     if (!currentId) return;
     setLoading(false);
-    toast(streamHint(channels.find((c) => c.id === currentId)));
+    showStreamHint(channels.find((c) => c.id === currentId));
   });
   video.addEventListener('volumechange', syncVolumeUI);
 
