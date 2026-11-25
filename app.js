@@ -98,22 +98,6 @@
     }
     return h265 > 0 ? 'H265' : (h264 > 0 ? 'H264' : 'unknown');
   }
-
-  // 播放前快速拉取 m3u8 的第一个分片探测编码（只取前 256KB）
-  async function probeCodec(channel) {
-    try {
-      const url = requestUrl(channel);
-      const res = await fetch(url, { cache: 'no-store' });
-      const text = await res.text();
-      const seg = text.split(/\r?\n/).map((l) => l.trim()).find((l) => l && !l.startsWith('#'));
-      if (!seg) return;
-      const segUrl = new URL(seg, res.url).href;
-      const segRes = await fetch(segUrl, { headers: { Range: 'bytes=0-262143' }, cache: 'no-store' });
-      const buf = await segRes.arrayBuffer();
-      channel.codec = detectCodecFromTS(buf);
-    } catch (e) { /* 探测失败不影响正常播放流程 */ }
-  }
-
   function clearSearch() {
     query = '';
     $('searchInput').value = '';
@@ -298,24 +282,16 @@
 
     if (useHlsJs) {
       let codecChecked = false;
-      // 并行探测编码：H265 在不支持的浏览器上直接提示，不浪费时间缓冲
-      probeCodec(channel).then(() => {
-        if (channel === channels.find((c) => c.id === currentId) &&
-            channel.codec === 'H265' && !hevcSupport() && hls) {
-          codecChecked = true;
-          setLoading(false);
-          toast('该源是 H265/HEVC 编码，当前浏览器无法解码；请用 Safari，或换 H264 源');
-          hls.destroy(); hls = null;
-        }
-      });
-      // 关闭 Worker，否则 FRAG_LOADED 的 payload 会被转移，无法探测编码
-      hls = new window.Hls({ enableWorker: false, backBufferLength: 30, maxBufferLength: 30 });
+      // 不额外发探测请求：直接用 hls.js 已下载的第一个分片判断编码（零重复流量）。
+      // 关闭 Worker，否则 FRAG_LOADED 的 payload 会被转移，无法探测编码。
+      hls = new window.Hls({ enableWorker: false, backBufferLength: 12, maxBufferLength: 12,
+        maxMaxBufferLength: 12, startLevel: -1 });
       hls.on(window.Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(url));
       hls.on(window.Hls.Events.FRAG_LOADED, (evt, data) => {
         if (codecChecked || !data || !data.payload) return;
         codecChecked = true;
         const codec = detectCodecFromTS(data.payload);
-        channel.codec = codec;
+        if (channel.codec !== codec) { channel.codec = codec; save(); render(); }
         if (codec === 'H265' && !hevcSupport()) {
           setLoading(false);
           toast('该源是 H265/HEVC 编码，当前浏览器无法解码；请用 Safari，或换 H264 源');
@@ -521,11 +497,7 @@
     closeSheets();
     play(ch);
     toast('频道已添加');
-    // 主动探测编码并标注到卡片，便于区分 iPhone 能否播放
-    probeCodec(ch).then(() => {
-      const cc = channels.find((c) => c.id === ch.id);
-      if (cc && cc.codec) save(), render();
-    });
+    // 编码标签由播放时的 FRAG_LOADED 用已下载分片判定，不再额外发探测请求（省一次 13MB 下载）
   });
 
   $('btnPickFile').addEventListener('click', () => $('fileInput').click());
