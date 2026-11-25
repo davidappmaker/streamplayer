@@ -84,10 +84,40 @@ const server = http.createServer((req, res) => {
     if (!isPlaylist) {
       if (done || res.headersSent) return;
       done = true;
-      res.writeHead(upstream.statusCode || 200, Object.assign({}, CORS, {
+      // 客户端只要部分字节时，上游忽略 Range 也会返回整片，这里按字节数截断，省流量
+      const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range || '');
+      const headers = Object.assign({}, CORS, {
         'Content-Type': ct || 'video/mp2t',
         'Accept-Ranges': 'bytes'
-      }));
+      });
+      if (range) {
+        const start = parseInt(range[1], 10);
+        const end = range[2] ? parseInt(range[2], 10) : null;
+        headers['Content-Range'] = 'bytes ' + start + '-' + (end !== null ? end : '') + '/*';
+        res.writeHead(206, headers);
+        let pos = 0; // 已收到的字节总数
+        let stopped = false;
+        upstream.on('data', (chunk) => {
+          if (stopped) return;
+          const chunkStart = pos;
+          const chunkEnd = pos + chunk.length - 1;
+          pos += chunk.length;
+          // 与请求区间 [start, end] 求交集
+          const from = Math.max(chunkStart, start);
+          const to = Math.min(chunkEnd, end === null ? Infinity : end);
+          if (from <= to) {
+            res.write(chunk.slice(from - chunkStart, to - chunkStart + 1));
+          }
+          if (end !== null && chunkEnd >= end) {
+            stopped = true;
+            upstream.destroy();
+            if (!res.writableEnded) res.end();
+          }
+        });
+        upstream.on('end', () => { if (!res.writableEnded) res.end(); });
+        return;
+      }
+      res.writeHead(upstream.statusCode || 200, headers);
       return upstream.pipe(res);
     }
     let body = '';
