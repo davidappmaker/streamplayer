@@ -42,13 +42,15 @@
       else localStorage.removeItem(PROXY_KEY);
     } catch (e) { /* 忽略存储异常 */ }
   }
-  // http 源在 https 页面会被浏览器拦截；配置了代理后自动走代理
+  // 配置了代理后，所有 http 源都自动走代理。
+  // 原因：https 页面会拦截 http 混合内容；file:// 和 http 页面虽不拦截，但源站没有 CORS 头，
+  // hls.js 的 XHR 同样取不到数据。所以只看源协议，不看页面协议。
+  // 注意：添加表单里的勾选框只有「强制代理」一种显式状态，未勾选表示自动判断，
+  // 不能写成 proxy:false，否则旧频道即使配了代理也不会走代理（曾经的真实 bug）。
   function needProxy(ch) {
     if (!proxyPrefix || !ch) return false;
     if (ch.proxy === true) return true;
-    if (ch.proxy === false) return false;
-    // https 页面会拦截 http 混合内容；file:// 页面的 http 源同样受 CORS 限制
-    return /^http:/i.test(ch.url) && (location.protocol === 'https:' || location.protocol === 'file:');
+    return /^http:/i.test(ch.url);
   }
   function requestUrl(ch) {
     return needProxy(ch) ? proxyPrefix + encodeURIComponent(ch.url) : ch.url;
@@ -125,7 +127,7 @@
     if (!Array.isArray(saved)) saved = [];
     saved = saved.filter((c) => c && c.url && c.name).map((c) => ({
       id: c.id || uid(), name: c.name, url: c.url, group: c.group || '自定义',
-      custom: true, proxy: c.proxy === true ? true : (c.proxy === false ? false : null),
+      custom: true, proxy: c.proxy === true ? true : null,
       codec: c.codec === 'H264' || c.codec === 'H265' ? c.codec : null
     }));
     channels = DEFAULT_CHANNELS.concat(saved);
@@ -489,7 +491,8 @@
     const group = $('fGroup').value.trim() || '自定义';
     if (!name || !url) return;
     if (channels.some((c) => c.url === url)) { toast('该地址已存在'); return; }
-    const ch = { id: uid(), name, url, group, custom: true, proxy: $('fProxy').checked };
+    // 勾选=强制代理；未勾选=null 表示按页面协议自动判断（http 源 + https/file 页面自动走代理）
+    const ch = { id: uid(), name, url, group, custom: true, proxy: $('fProxy').checked ? true : null };
     channels.unshift(ch);
     save();
     clearSearch();
