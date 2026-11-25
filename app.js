@@ -26,6 +26,8 @@
   let controlsTimer = null;
   let toastTimer = null;
   let proxyPrefix = '';
+  let batchMode = false;
+  const selected = new Set();
 
   /* ---------------- 工具 ---------------- */
   const uid = () => 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
@@ -140,7 +142,7 @@
     if (!groups.includes(activeGroup)) activeGroup = '全部';
 
     $('tabs').innerHTML = groups.map((g) =>
-      `<button class="tab${g === activeGroup ? ' active' : ''}" data-group="${esc(g)}">${esc(g)}</button>`
+      `<button class="tab${g === activeGroup ? ' active' : ''}" data-group="${esc(g)}" title="${g === '全部' ? '全部频道' : '长按或右键可删除分组「' + esc(g) + '」'}">${esc(g)}</button>`
     ).join('');
 
     const q = query.trim().toLowerCase();
@@ -150,15 +152,97 @@
     );
 
     $('channelCount').textContent = channels.length + ' 个频道';
-    $('channelList').innerHTML = list.map((c, i) => {
-      const index = channels.indexOf(c) + 1;
-      return `<button class="channel-card${c.id === currentId ? ' active' : ''}${c.custom ? ' custom' : ''}" data-id="${esc(c.id)}" title="${esc(c.url)}">
-        <span class="card-index">${String(index).padStart(2, '0')}</span>
-        <span class="card-body"><strong>${esc(c.name)}${c.codec === 'H265' ? ' <span class="codec-tag h265">H265</span>' : c.codec === 'H264' ? ' <span class="codec-tag h264">H264</span>' : ''}</strong><small>${esc(c.group || '未分组')}</small></span>
-        ${c.custom ? `<span class="card-del" data-del="${esc(c.id)}" title="删除">✕</span>` : ''}
-      </button>`;
-    }).join('');
+    const tags = (c) => c.codec === 'H265'
+      ? ' <span class="codec-tag h265">H265</span>'
+      : c.codec === 'H264' ? ' <span class="codec-tag h264">H264</span>' : '';
+
+    if (batchMode) {
+      $('channelList').innerHTML = list.map((c) => {
+        const checked = selected.has(c.id);
+        return `<button class="channel-card batch${checked ? ' selected' : ''}${c.custom ? '' : ' locked'}" data-id="${esc(c.id)}" data-batch="${c.custom ? esc(c.id) : ''}" title="${esc(c.url)}">
+          <span class="batch-check">${c.custom ? (checked ? '✓' : '') : '·'}</span>
+          <span class="card-body"><strong>${esc(c.name)}${tags(c)}</strong><small>${esc(c.group || '未分组')}${c.custom ? '' : ' · 内置源不可删'}</small></span>
+        </button>`;
+      }).join('');
+    } else {
+      $('channelList').innerHTML = list.map((c, i) => {
+        const index = channels.indexOf(c) + 1;
+        return `<button class="channel-card${c.id === currentId ? ' active' : ''}${c.custom ? ' custom' : ''}" data-id="${esc(c.id)}" title="${esc(c.url)}">
+          <span class="card-index">${String(index).padStart(2, '0')}</span>
+          <span class="card-body"><strong>${esc(c.name)}${tags(c)}</strong><small>${esc(c.group || '未分组')}</small></span>
+          ${c.custom ? `<span class="card-del" data-del="${esc(c.id)}" title="删除">✕</span>` : ''}
+        </button>`;
+      }).join('');
+    }
+
     $('emptyState').hidden = list.length > 0;
+    $('batchBar').hidden = !batchMode;
+    $('btnBatch').textContent = batchMode ? '完成' : '管理';
+    $('btnBatch').classList.toggle('active', batchMode);
+    $('batchCount').textContent = '已选 ' + selected.size + ' 个';
+    const visibleCustom = channels.filter((c) => c.custom && (activeGroup === '全部' || c.group === activeGroup));
+    const allSelected = visibleCustom.length > 0 && visibleCustom.every((c) => selected.has(c.id));
+    $('btnSelectAll').textContent = allSelected ? '全不选' : '全选';
+  }
+
+  /* ---------------- 批量 / 分组删除 ---------------- */
+  function stopPlayback() {
+    if (hls) { hls.destroy(); hls = null; }
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    currentId = null;
+    $('nowTitle').textContent = '尚未播放';
+    $('nowGroup').textContent = '—';
+    $('streamLine').textContent = '请点右上角「+」添加你自己的直播源；下方是国外测试源，国内可能连不上';
+    $('videoPlaceholder').hidden = false;
+    $('liveBadge').hidden = true;
+    $('nowDot').classList.remove('on');
+    setLoading(false);
+  }
+
+  // 只删除自定义频道，内置测试源始终保留
+  function removeChannelsByIds(ids) {
+    const deleteSet = new Set(ids);
+    channels = channels.filter((c) => !deleteSet.has(c.id) || !c.custom);
+    if (currentId && deleteSet.has(currentId)) stopPlayback();
+    selected.clear();
+    save();
+    render();
+  }
+
+  function deleteGroup(group) {
+    if (!group || group === '全部') { toast('「全部」不能删除'); return; }
+    const targets = channels.filter((c) => c.custom && c.group === group);
+    if (!targets.length) { toast('分组「' + group + '」没有可删除的频道'); return; }
+    if (!window.confirm('确定删除分组「' + group + '」下的 ' + targets.length + ' 个频道？此操作不可恢复，建议先导出备份。')) return;
+    removeChannelsByIds(targets.map((c) => c.id));
+    toast('已删除分组「' + group + '」的 ' + targets.length + ' 个频道');
+  }
+
+  function deleteSelected() {
+    const ids = Array.from(selected).filter((id) => {
+      const c = channels.find((x) => x.id === id);
+      return c && c.custom;
+    });
+    if (!ids.length) { toast('请先勾选要删除的频道（内置测试源不可删）'); return; }
+    if (!window.confirm('确定删除选中的 ' + ids.length + ' 个频道？此操作不可恢复，建议先导出备份。')) return;
+    removeChannelsByIds(ids);
+    toast('已删除 ' + ids.length + ' 个频道');
+  }
+
+  function selectAllVisible() {
+    const visible = channels.filter((c) => c.custom && (activeGroup === '全部' || c.group === activeGroup));
+    const allSelected = visible.length > 0 && visible.every((c) => selected.has(c.id));
+    visible.forEach((c) => { if (allSelected) selected.delete(c.id); else selected.add(c.id); });
+    render();
+  }
+
+  function toggleBatchMode(on) {
+    batchMode = !!on;
+    selected.clear();
+    render();
+    if (batchMode) toast('点频道勾选，完成后点「删除」；内置测试源不可选');
   }
 
   /* ---------------- 播放 ---------------- */
@@ -458,6 +542,10 @@
   }
 
   /* ---------------- 事件绑定 ---------------- */
+  $('btnBatch').addEventListener('click', () => toggleBatchMode(!batchMode));
+  $('btnSelectAll').addEventListener('click', selectAllVisible);
+  $('btnBatchCancel').addEventListener('click', () => toggleBatchMode(false));
+  $('btnBatchDelete').addEventListener('click', deleteSelected);
   $('btnAdd').addEventListener('click', () => { $('addForm').reset(); $('fGroup').value = '自定义'; openSheet('sheetAdd'); });
   $('btnImport').addEventListener('click', () => openSheet('sheetImport'));
   $('btnMore').addEventListener('click', () => openSheet('sheetMore'));
@@ -556,10 +644,33 @@
   $('btnClearSearch').addEventListener('click', clearSearch);
   $('btnClearSearch2').addEventListener('click', clearSearch);
 
+  // 长按分组标签 650ms 一键删除该分组下的自定义频道；电脑用右键同样触发。
+  // 长按后会补发 click，用 longPressFired 吞掉这一次，避免误切换分组。
+  let pressTimer = null;
+  let longPressFired = false;
+  $('tabs').addEventListener('pointerdown', (e) => {
+    const tab = e.target.closest('.tab[data-group]');
+    longPressFired = false;
+    if (!tab || tab.dataset.group === '全部') return;
+    const group = tab.dataset.group;
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => { longPressFired = true; deleteGroup(group); }, 650);
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((type) => {
+    $('tabs').addEventListener(type, () => { clearTimeout(pressTimer); pressTimer = null; });
+  });
+  $('tabs').addEventListener('contextmenu', (e) => {
+    const tab = e.target.closest('.tab[data-group]');
+    if (!tab || tab.dataset.group === '全部') return;
+    e.preventDefault();
+    deleteGroup(tab.dataset.group);
+  });
   $('tabs').addEventListener('click', (e) => {
+    if (longPressFired) { longPressFired = false; return; }
     const tab = e.target.closest('.tab');
     if (!tab) return;
     activeGroup = tab.dataset.group;
+    selected.clear();
     render();
   });
 
@@ -585,6 +696,13 @@
     }
     const card = e.target.closest('.channel-card');
     if (!card) return;
+    if (batchMode) {
+      const id = card.dataset.batch;
+      if (!id) { toast('内置测试源不可删除'); return; }
+      if (selected.has(id)) selected.delete(id); else selected.add(id);
+      render();
+      return;
+    }
     const ch = channels.find((c) => c.id === card.dataset.id);
     if (ch) play(ch);
   });
