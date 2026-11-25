@@ -44,14 +44,19 @@
       else localStorage.removeItem(PROXY_KEY);
     } catch (e) { /* 忽略存储异常 */ }
   }
-  // 配置了代理后，所有 http 源都自动走代理。
-  // 原因：https 页面会拦截 http 混合内容；file:// 和 http 页面虽不拦截，但源站没有 CORS 头，
-  // hls.js 的 XHR 同样取不到数据。所以只看源协议，不看页面协议。
+  // 是否走代理，按设备能力区分：
+  // - iOS / 桌面 Safari 走原生 HLS，系统播放器直接读 m3u8，不受 CORS 和混合内容限制，
+  //   302 跳裸 IP、无 CORS 头都无所谓 —— 默认直连，这样 http 源（含 H264）本来就能播。
+  //   只有用户显式勾选「强制通过代理播放」时才走代理。
+  // - Chrome/Edge 走 hls.js，XHR 受 CORS 限制，配了代理后 http 源一律走代理。
   // 注意：添加表单里的勾选框只有「强制代理」一种显式状态，未勾选表示自动判断，
   // 不能写成 proxy:false，否则旧频道即使配了代理也不会走代理（曾经的真实 bug）。
   function needProxy(ch) {
-    if (!proxyPrefix || !ch) return false;
-    if (ch.proxy === true) return true;
+    if (!ch) return false;
+    if (ch.proxy === true) return !!proxyPrefix;
+    if (!proxyPrefix) return false;
+    // 原生 HLS 设备：默认直连，不被代理拦截
+    if (preferNativeHls()) return false;
     return /^http:/i.test(ch.url);
   }
   function requestUrl(ch) {
@@ -275,12 +280,19 @@
     if (needProxy(ch)) {
       const alive = await proxyAlive();
       if (alive === false) {
-        return '代理服务没在运行：请双击「启动本地代理.bat」，保持黑色窗口开着，再重新点频道';
+        return /^https:\/\/.*workers\.dev/i.test(proxyPrefix)
+          ? '代理连不上：Cloudflare Worker 地址无效或当前网络访问不了 workers.dev（国内常见）。可在「代理设置」清空，iPhone 改直连试试'
+          : '代理服务没在运行：请双击「启动本地代理.bat」，保持黑色窗口开着，再重新点频道';
       }
       return '代理已连接，但该源取不到数据：可能是源已失效，点「更多 → 网络诊断」看详情';
     }
-    // 已配置代理但仍未走代理，或根本没配置：http 源必须走代理才能跨域读取
     if (/^http:/i.test(ch.url)) {
+      // 原生 HLS 设备默认直连：失败多半是源失效或当前网络不通，不是代理问题
+      if (preferNativeHls()) {
+        return proxyPrefix
+          ? '播放失败：iPhone 走系统播放器直连，未使用代理。若该源确实连不上，添加频道时可勾选「强制通过代理播放」；也可先清空代理'
+          : '播放失败：源连不上或已失效。iPhone 直连即可，无需代理；可用「更多 → 网络诊断」检测';
+      }
       return proxyPrefix
         ? '播放失败：该 http 源未走代理，请到「更多 → 代理设置」检查地址是否正确'
         : '播放失败：HTTP 源需要代理才能跨域读取。请到「更多 → 代理设置」填 http://127.0.0.1:8787/?url=（电脑需先双击「启动本地代理.bat」）';
@@ -302,10 +314,15 @@
     // 用代理时先探测代理服务本身——区分「代理没开」和「源不可用」
     const proxyOk = usingProxy ? await proxyAlive() : null;
     let proxyLine;
-    if (!usingProxy) proxyLine = '代理：未启用';
-    else if (proxyOk === true) proxyLine = '代理服务：<span class="diag-ok">✓ 运行中</span>';
-    else proxyLine = '代理服务：<span class="diag-bad">✗ 没运行 — 请双击「启动本地代理.bat」并保持窗口开着</span>';
+    if (!usingProxy) {
+      proxyLine = preferNativeHls()
+        ? (proxyPrefix ? '代理：已配置但 iPhone 直连（原生 HLS 不受跨域限制）' : '代理：未启用（直连）')
+        : '代理：未启用';
+    }
+    else if (proxyOk === true) proxyLine = '代理服务：<span class="diag-ok">✓ 可连接</span>';
+    else proxyLine = '代理服务：<span class="diag-bad">✗ 连不上 — ' + (/^https:\/\/.*workers\.dev/i.test(proxyPrefix) ? 'workers.dev 当前网络不可达，建议清空代理让 iPhone 直连' : '本地代理没运行，请双击「启动本地代理.bat」') + '</span>';
     const lines = [
+      '设备：' + (isIOSDevice() ? 'iOS' : '桌面 / 其它'),
       '页面协议：' + location.protocol,
       '浏览器模式：' + (preferNativeHls() ? '原生 HLS（系统解码）' : 'hls.js'),
       '浏览器 HEVC 解码：' + (hevcSupport() ? '声明支持' : '不支持'),
