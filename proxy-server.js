@@ -11,6 +11,7 @@
  * 只监听本机 127.0.0.1，不对外暴露；只做转发，不存储任何内容。
  */
 const http = require('http');
+const os = require('os');
 const { URL } = require('url');
 
 const PORT = 8787;
@@ -67,7 +68,10 @@ const server = http.createServer((req, res) => {
     res.writeHead(400, CORS);
     return res.end('Missing ?url=');
   }
-  const prefix = 'http://127.0.0.1:' + PORT + parsed.pathname;
+  // 用客户端实际访问的 Host 生成分片地址：电脑走 127.0.0.1，手机走局域网 IP 时，
+  // m3u8 里的 ts 地址也会正确指向局域网 IP，而不是写死的 127.0.0.1（手机会连不上）。
+  const host = (req.headers.host || '').split(',')[0].trim() || '127.0.0.1:' + PORT;
+  const prefix = 'http://' + host + parsed.pathname;
 
   let done = false;
   const fail = (msg, code) => {
@@ -137,7 +141,30 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+function lanIPs() {
+  const out = [];
+  const ifaces = os.networkInterfaces();
+  Object.keys(ifaces).forEach((name) => {
+    (ifaces[name] || []).forEach((a) => {
+      if (a.family === 'IPv4' && !a.internal && /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(a.address)) {
+        out.push(a.address);
+      }
+    });
+  });
+  return out;
+}
+
+// 监听 0.0.0.0：既服务本机，也服务同一 WiFi 下的手机。
+// 代理只做转发，不存储内容；仅在本地网络内可达。
+server.listen(PORT, '0.0.0.0', () => {
   console.log('本地代理已启动：http://127.0.0.1:' + PORT + '/?url=');
-  console.log('保持此窗口开着，在播放器里填入上面的地址即可。');
+  const ips = lanIPs();
+  if (ips.length) {
+    console.log('');
+    console.log('同一 WiFi 下的手机也能用，填这个地址（更快）：');
+    ips.forEach((ip) => console.log('  http://' + ip + ':' + PORT + '/?url='));
+    console.log('需保证手机和电脑连同一个 WiFi，且电脑防火墙放行 ' + PORT + ' 端口。');
+  }
+  console.log('');
+  console.log('保持此窗口开着，在播放器「更多 → 代理设置」里填入即可。');
 });
