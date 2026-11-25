@@ -185,6 +185,7 @@
       </label>
       <p class="hint">某些直播源是 http 地址、或会跳转到没有 CORS 头的服务器，浏览器无法直接读取。这里填一个反向代理地址，播放器会自动把 http 源通过它转发。</p>
       <p class="hint"><b>电脑本机：</b>双击项目里的「启动本地代理.bat」，保持黑窗口开着，在这里填 <code>http://127.0.0.1:8787/?url=</code>。<br><b>手机 / 长期可用：</b>把项目自带的 <b>worker.js</b> 部署到 Cloudflare Workers，填它给出的 <code>https://xxx.workers.dev/?url=</code>。部署说明见 README。</p>
+      <p class="hint">iPhone / iPad 走系统播放器，默认直连、不受跨域限制，即使填了代理也不会自动使用；只有勾选了「强制通过代理播放」的频道才走代理。如果配了 Cloudflare 后连 H264 都打不开（workers.dev 国内常连不上），把这里清空即可。</p>
       <p class="hint">留空则不使用代理。HTTPS 源默认直连，不受影响。</p>
       <div class="row-btns">
         <button class="ghost-btn" id="btnProxyClear">清空</button>
