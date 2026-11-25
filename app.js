@@ -590,7 +590,12 @@
   });
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => closeSheets()));
   $('mask').addEventListener('click', () => closeSheets());
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheets(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!$('fsList').hidden) { $('fsList').hidden = true; return; }
+    if (fsActive) { exitFs(); return; }
+    closeSheets();
+  });
 
   $('addForm').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -738,15 +743,58 @@
     video.muted = video.volume === 0;
     syncVolumeUI();
   });
-  $('btnFullscreen').addEventListener('click', () => {
-    if (video.webkitEnterFullscreen) {
-      try { video.webkitEnterFullscreen(); return; } catch (e) { /* 继续尝试其它方式 */ }
-    }
-    if (video.requestFullscreen) video.requestFullscreen().catch(() => {});
-    else if (shell.requestFullscreen) shell.requestFullscreen().catch(() => {});
+  // 全屏用「网页内铺满」而不是 iOS 原生视频全屏：
+  // 原生全屏会把视频从网页层级里抽走，HTML 按钮/频道列表无法叠在上面。
+  // 铺满模式下 video 还是同一个 DOM 节点，切换频道不中断、列表能盖在视频上。
+  let fsActive = false;
+  function updateFsTitle() {
+    const ch = channels.find((c) => c.id === currentId);
+    $('fsTitle').textContent = ch ? ch.name : '直播源播放器';
+  }
+  function renderFsList() {
+    const q = ($('fsSearchInput').value || '').trim().toLowerCase();
+    const list = channels.filter((c) =>
+      !q || c.name.toLowerCase().includes(q) || c.url.toLowerCase().includes(q)
+    );
+    $('fsListItems').innerHTML = list.map((c, i) =>
+      `<button class="fs-item${c.id === currentId ? ' active' : ''}" data-id="${esc(c.id)}">
+        <span class="fs-item-index">${String(i + 1).padStart(2, '0')}</span>
+        <span class="fs-item-body"><strong>${esc(c.name)}</strong><small>${esc(c.group || '未分组')}</small></span>
+      </button>`
+    ).join('');
+  }
+  function enterFs() {
+    fsActive = true;
+    shell.classList.add('fs-active');
+    document.body.classList.add('fs-lock');
+    $('fsTopbar').hidden = false;
+    updateFsTitle();
+    renderFsList();
+    showControls();
+  }
+  function exitFs() {
+    fsActive = false;
+    shell.classList.remove('fs-active');
+    document.body.classList.remove('fs-lock');
+    $('fsTopbar').hidden = true;
+    $('fsList').hidden = true;
+  }
+  $('btnFullscreen').addEventListener('click', () => { if (fsActive) exitFs(); else enterFs(); });
+  $('btnFsExit').addEventListener('click', exitFs);
+  $('btnFsList').addEventListener('click', () => { renderFsList(); $('fsList').hidden = false; });
+  $('btnFsListClose').addEventListener('click', () => { $('fsList').hidden = true; });
+  $('fsSearchInput').addEventListener('input', renderFsList);
+  $('fsListItems').addEventListener('click', (e) => {
+    const item = e.target.closest('.fs-item');
+    if (!item) return;
+    const ch = channels.find((c) => c.id === item.dataset.id);
+    if (!ch) return;
+    $('fsList').hidden = true;
+    play(ch);
+    updateFsTitle();
   });
   shell.addEventListener('click', (e) => {
-    if (e.target.closest('.video-controls')) return;
+    if (e.target.closest('.video-controls, .fs-topbar, .fs-list')) return;
     if (currentId) showControls();
   });
 
