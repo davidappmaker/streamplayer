@@ -52,9 +52,15 @@ export default {
       return new Response('Missing ?url= parameter', { status: 400, headers: CORS });
     }
 
+    // 转发客户端的 Range / User-Agent 等请求头，避免上游忽略分片范围而回传整片
+    const fwdHeaders = new Headers();
+    const range = request.headers.get('Range');
+    if (range) fwdHeaders.set('Range', range);
+    fwdHeaders.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36');
+
     let upstream;
     try {
-      upstream = await fetch(target, { redirect: 'follow' });
+      upstream = await fetch(target, { redirect: 'follow', headers: fwdHeaders });
     } catch (err) {
       return new Response('Upstream fetch failed: ' + (err && err.message ? err.message : 'unknown'), {
         status: 502, headers: CORS
@@ -67,15 +73,15 @@ export default {
     const isPlaylist = /mpegurl|m3u8/i.test(contentType) || /#EXTM3U/i.test(target);
 
     if (!isPlaylist) {
-      // ts / mp4 分片：流式透传，只补 CORS 头
-      return new Response(upstream.body, {
-        status: upstream.status,
-        headers: Object.assign({}, CORS, {
-          'Content-Type': contentType || 'video/mp2t',
-          'Accept-Ranges': 'bytes',
-          'Cache-Control': 'no-store'
-        })
+      // ts / mp4 分片：流式透传，只补 CORS 头；保留上游的 206 / Content-Range
+      const h = Object.assign({}, CORS, {
+        'Content-Type': contentType || 'video/mp2t',
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-store'
       });
+      const cr = upstream.headers.get('Content-Range');
+      if (cr) h['Content-Range'] = cr;
+      return new Response(upstream.body, { status: upstream.status, headers: h });
     }
 
     // m3u8 播放列表：把里面每一个分片地址改写成代理地址
